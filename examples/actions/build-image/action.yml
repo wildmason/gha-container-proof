@@ -1,0 +1,16 @@
+name: "Build Image"
+description: "Example local Dockerfile-backed action for gha-container-proof."
+author: "Wildmason"
+inputs:
+  target:
+    description: "Build target."
+    required: false
+    default: "release"
+runs:
+  using: "docker"
+  image: "Dockerfile"
+  pre-entrypoint: "/pre.sh"
+  entrypoint: "/entrypoint.sh"
+  post-entrypoint: "/post.sh"
+  args:
+    - ${{ inputs.target }}

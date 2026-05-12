@@ -1,0 +1,29 @@
+name: action-smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: released-action smoke
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: check-workflow via released action
+        uses: wildmason/gha-container-proof@v1
+        with:
+          command: check-workflow
+          repo: .
+          workflow: examples/workflows/simple-container.yml
+          format: json
+          output: target/container-check.json
+      - name: plan-action via released action
+        uses: wildmason/gha-container-proof@v1
+        with:
+          command: plan-action
+          action-ref: ./examples/actions/build-image
+          action-path: examples/actions/build-image
+          format: json
+          output: target/container-action.json

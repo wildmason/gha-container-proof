@@ -1,0 +1,11 @@
+name: simple-container
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    container: node:22-bookworm
+    steps:
+      - uses: actions/checkout@v5
+      - run: node --version

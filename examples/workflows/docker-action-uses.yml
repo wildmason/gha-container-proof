@@ -1,0 +1,13 @@
+name: docker-action
+
+on: [push]
+
+jobs:
+  scan:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker://alpine:3.20
+        with:
+          args: echo hello from alpine
+      - uses: ./actions/build-image

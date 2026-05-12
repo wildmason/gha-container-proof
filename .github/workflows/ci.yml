@@ -1,0 +1,85 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: fmt, test, clippy, doc, package, smoke
+    runs-on: ubuntu-22.04
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTFLAGS: "-D warnings"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo test --locked --verbose
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - run: cargo doc --locked --no-deps
+      - run: cargo package --locked --no-verify
+      - name: Smoke check-workflow on bundled example
+        run: |
+          set -euo pipefail
+          cargo run --locked --release -- check-workflow \
+            --repo . \
+            --workflow examples/workflows/simple-container.yml \
+            --format json \
+            --output target/container-check.json
+          failed=$(jq '.summary.failed' target/container-check.json)
+          if [ "$failed" != "0" ]; then
+            echo "Bundled example workflow produced failed checks." >&2
+            exit 1
+          fi
+      - name: Smoke plan-action on bundled local Docker action
+        run: |
+          set -euo pipefail
+          cargo run --locked --release -- plan-action \
+            --action-ref ./examples/actions/build-image \
+            --action-path examples/actions/build-image \
+            --format json \
+            --output target/container-action.json
+          compatibility=$(jq -r '.compatibility' target/container-action.json)
+          if [ "$compatibility" = "unsupported" ]; then
+            echo "Bundled local Docker action classified as unsupported." >&2
+            exit 1
+          fi
+      - name: Smoke probe with fake docker (image inspect happy path)
+        run: |
+          set -euo pipefail
+          mkdir -p target/fake-docker
+          cat > target/fake-docker/docker <<'SCRIPT'
+          #!/bin/sh
+          case "$1 $2" in
+            "image inspect")
+              echo "[{\"Id\":\"sha256:abc\"}]"
+              exit 0
+              ;;
+            "run --rm"*|"run --rm")
+              echo "fake-docker-stdout $*"
+              exit 0
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
+          SCRIPT
+          chmod +x target/fake-docker/docker
+          cargo run --locked --release -- probe \
+            --image alpine:3.20 \
+            --tool sh \
+            --docker-bin target/fake-docker/docker \
+            --format json \
+            --output target/container-probe.json
+          failed=$(jq '.summary.failed' target/container-probe.json)
+          if [ "$failed" != "0" ]; then
+            echo "Fake-docker probe produced failed checks." >&2
+            exit 1
+          fi

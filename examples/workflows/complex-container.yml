@@ -1,0 +1,25 @@
+name: complex-container
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    container:
+      image: node:22-bookworm
+      credentials:
+        username: ${{ secrets.REGISTRY_USER }}
+        password: ${{ secrets.REGISTRY_TOKEN }}
+      env:
+        NODE_ENV: test
+        DATABASE_PASSWORD: secret123
+      ports:
+        - 3000
+        - 8080:80
+      volumes:
+        - /host/cache:/cache
+        - /var/run/docker.sock:/var/run/docker.sock
+      options: "--cpus 2 --memory 4g"
+    steps:
+      - uses: actions/checkout@v5
+      - run: node --version

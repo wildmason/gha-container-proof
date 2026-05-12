@@ -1,0 +1,219 @@
+name: "GHA Container Proof"
+description: "Classify GitHub Actions job containers and Docker actions with Docker CLI probe receipts — offline by default."
+author: "Wildmason"
+branding:
+  icon: "box"
+  color: "gray-dark"
+inputs:
+  version:
+    description: "Crate version to install, or latest."
+    required: false
+    default: "latest"
+  command:
+    description: "Command to run. Use check-workflow, plan-job, plan-action, or probe."
+    required: false
+    default: "check-workflow"
+  repo:
+    description: "Repository root for check-workflow (defaults to the current directory)."
+    required: false
+  workspace:
+    description: "Workspace root for check-workflow."
+    required: false
+  workflow:
+    description: "Newline-separated workflow paths for check-workflow."
+    required: false
+  job-id:
+    description: "Job id for plan-job."
+    required: false
+  runner-os:
+    description: "Runner OS: linux, windows, or macos."
+    required: false
+    default: "linux"
+  runs-on:
+    description: "Newline-separated runs-on labels for plan-job."
+    required: false
+  container:
+    description: "Image for plan-job's job container."
+    required: false
+  env:
+    description: "Newline-separated KEY=VALUE entries (plan-job, plan-action, probe)."
+    required: false
+  port:
+    description: "Newline-separated port mappings for plan-job."
+    required: false
+  volume:
+    description: "Newline-separated volume mappings for plan-job."
+    required: false
+  options:
+    description: "Raw Docker options string for plan-job."
+    required: false
+  action-ref:
+    description: "Action reference for plan-action (e.g. ./actions/build or docker://alpine:3)."
+    required: false
+  action-path:
+    description: "Local action directory for plan-action."
+    required: false
+  using:
+    description: "runs.using value for plan-action (docker, node20, composite)."
+    required: false
+  image:
+    description: "Image or Dockerfile descriptor for plan-action or probe."
+    required: false
+  entrypoint:
+    description: "Entrypoint override for plan-action."
+    required: false
+  pre-entrypoint:
+    description: "Pre-entrypoint script for plan-action."
+    required: false
+  post-entrypoint:
+    description: "Post-entrypoint script for plan-action."
+    required: false
+  args:
+    description: "Args string for plan-action."
+    required: false
+  tool:
+    description: "Newline-separated tool names for probe (each run as `<tool> --version`)."
+    required: false
+  probe-command:
+    description: "Newline-separated raw commands for probe (each run inside the container)."
+    required: false
+  allow-pull:
+    description: "Allow probe to pull images (set to 'true' for opt-in)."
+    required: false
+    default: "false"
+  docker-bin:
+    description: "Override the Docker CLI binary path (default: discovered on PATH)."
+    required: false
+  format:
+    description: "Receipt format: text, json, or markdown."
+    required: false
+    default: "text"
+  output:
+    description: "Optional receipt output path."
+    required: false
+  strict:
+    description: "Treat warnings as failures."
+    required: false
+    default: "false"
+runs:
+  using: "composite"
+  steps:
+    - name: "Install gha-container-proof"
+      shell: "bash"
+      run: |
+        if command -v gha-container-proof >/dev/null 2>&1; then
+          exit 0
+        fi
+
+        if [ "${PROOF_VERSION}" = "latest" ]; then
+          cargo install gha-container-proof --locked
+        else
+          cargo install gha-container-proof --version "${PROOF_VERSION}" --locked
+        fi
+      env:
+        PROOF_VERSION: ${{ inputs.version }}
+    - name: "Run gha-container-proof"
+      shell: "bash"
+      run: |
+        set -euo pipefail
+
+        args=("$PROOF_COMMAND")
+
+        append_if_set() {
+          local flag="$1"
+          local value="$2"
+          if [ -n "$value" ]; then
+            args+=("$flag" "$value")
+          fi
+        }
+
+        append_lines() {
+          local flag="$1"
+          local value="$2"
+          while IFS= read -r line; do
+            if [ -n "$line" ]; then
+              args+=("$flag" "$line")
+            fi
+          done <<< "$value"
+        }
+
+        case "$PROOF_COMMAND" in
+          check-workflow)
+            append_if_set --repo "$PROOF_REPO"
+            append_if_set --workspace "$PROOF_WORKSPACE"
+            append_lines --workflow "$PROOF_WORKFLOW"
+            append_if_set --runner-os "$PROOF_RUNNER_OS"
+            ;;
+          plan-job)
+            append_if_set --job-id "$PROOF_JOB_ID"
+            append_if_set --runner-os "$PROOF_RUNNER_OS"
+            append_lines --runs-on "$PROOF_RUNS_ON"
+            append_if_set --container "$PROOF_CONTAINER"
+            append_lines --env "$PROOF_ENV"
+            append_lines --port "$PROOF_PORT"
+            append_lines --volume "$PROOF_VOLUME"
+            append_if_set --options "$PROOF_OPTIONS"
+            ;;
+          plan-action)
+            append_if_set --action-ref "$PROOF_ACTION_REF"
+            append_if_set --action-path "$PROOF_ACTION_PATH"
+            append_if_set --using "$PROOF_USING"
+            append_if_set --image "$PROOF_IMAGE"
+            append_if_set --entrypoint "$PROOF_ENTRYPOINT"
+            append_if_set --pre-entrypoint "$PROOF_PRE_ENTRYPOINT"
+            append_if_set --post-entrypoint "$PROOF_POST_ENTRYPOINT"
+            append_if_set --args "$PROOF_ARGS"
+            append_lines --env "$PROOF_ENV"
+            ;;
+          probe)
+            append_if_set --image "$PROOF_IMAGE"
+            append_if_set --runner-os "$PROOF_RUNNER_OS"
+            append_lines --tool "$PROOF_TOOL"
+            append_lines --command "$PROOF_PROBE_COMMAND"
+            append_lines --env "$PROOF_ENV"
+            if [ "$PROOF_ALLOW_PULL" = "true" ]; then
+              args+=(--allow-pull)
+            fi
+            append_if_set --docker-bin "$PROOF_DOCKER_BIN"
+            ;;
+          *)
+            echo "command must be one of: check-workflow, plan-job, plan-action, probe" >&2
+            exit 2
+            ;;
+        esac
+
+        args+=(--format "$PROOF_FORMAT")
+        append_if_set --output "$PROOF_OUTPUT"
+        if [ "$PROOF_STRICT" = "true" ]; then
+          args+=(--strict)
+        fi
+
+        gha-container-proof "${args[@]}"
+      env:
+        PROOF_COMMAND: ${{ inputs.command }}
+        PROOF_REPO: ${{ inputs.repo }}
+        PROOF_WORKSPACE: ${{ inputs.workspace }}
+        PROOF_WORKFLOW: ${{ inputs.workflow }}
+        PROOF_RUNNER_OS: ${{ inputs.runner-os }}
+        PROOF_JOB_ID: ${{ inputs.job-id }}
+        PROOF_RUNS_ON: ${{ inputs.runs-on }}
+        PROOF_CONTAINER: ${{ inputs.container }}
+        PROOF_ENV: ${{ inputs.env }}
+        PROOF_PORT: ${{ inputs.port }}
+        PROOF_VOLUME: ${{ inputs.volume }}
+        PROOF_OPTIONS: ${{ inputs.options }}
+        PROOF_ACTION_REF: ${{ inputs.action-ref }}
+        PROOF_ACTION_PATH: ${{ inputs.action-path }}
+        PROOF_USING: ${{ inputs.using }}
+        PROOF_IMAGE: ${{ inputs.image }}
+        PROOF_ENTRYPOINT: ${{ inputs.entrypoint }}
+        PROOF_PRE_ENTRYPOINT: ${{ inputs.pre-entrypoint }}
+        PROOF_POST_ENTRYPOINT: ${{ inputs.post-entrypoint }}
+        PROOF_ARGS: ${{ inputs.args }}
+        PROOF_TOOL: ${{ inputs.tool }}
+        PROOF_PROBE_COMMAND: ${{ inputs.probe-command }}
+        PROOF_ALLOW_PULL: ${{ inputs.allow-pull }}
+        PROOF_DOCKER_BIN: ${{ inputs.docker-bin }}
+        PROOF_FORMAT: ${{ inputs.format }}
+        PROOF_OUTPUT: ${{ inputs.output }}
+        PROOF_STRICT: ${{ inputs.strict }}

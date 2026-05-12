@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 - Unreleased
+## 1.0.0 - 2026-05-12
 
 - Initial release.
 - Added `check-workflow` for scanning workflow YAML to find `jobs.<id>.container` (string and object forms), `steps[*].uses: docker://...`, and local action manifests with `runs.using: docker` (image: `Dockerfile`, `docker://...`, or relative Dockerfile path).
